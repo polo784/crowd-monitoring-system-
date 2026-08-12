@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Local datasets and generated density maps
+# Keep these files on the computer, but do not store their large binary
+# contents in Git. The README will document how to obtain/regenerate them.
+cv_project/mall_dataset/
+cv_project/mall_dataset_zipped.zip
+mall_dataset/
+
+# Trained model weights and experiment outputs
+checkpoints/
+outputs/
+runs/
+*.pt
+*.pth
+
+# Tool and notebook caches
+.uv-cache/
+.pytest_cache/
+.ipynb_checkpoints/
