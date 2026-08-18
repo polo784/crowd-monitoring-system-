@@ -1,6 +1,5 @@
 import numpy as np
 import scipy.io as sio
-from scipy.ndimage import gaussian_filter
 import os
 import h5py
 
@@ -12,19 +11,43 @@ def generate_density_map(img_shape, points, sigma=15):
     sigma: Spread of the Gaussian blur. 15 is standard for crowded scenes.
     """
     density_map = np.zeros(img_shape, dtype=np.float32)
-    
+
     if len(points) == 0:
         return density_map
+
+    # Match scipy.ndimage.gaussian_filter's default 4-sigma kernel radius.
+    radius = int(4 * sigma + 0.5)
+    offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+    gaussian_1d = np.exp(-(offsets**2) / (2 * sigma**2))
+    gaussian_kernel = np.outer(gaussian_1d, gaussian_1d)
 
     for p in points:
         # The Mall dataset sometimes stores floats, so we cast to int
         x, y = int(p[0]), int(p[1])
         # Ensure coordinates are strictly within matrix bounds
         if y < img_shape[0] and x < img_shape[1] and y >= 0 and x >= 0:
-            density_map[y, x] = 1.0
+            image_y_start = max(0, y - radius)
+            image_y_end = min(img_shape[0], y + radius + 1)
+            image_x_start = max(0, x - radius)
+            image_x_end = min(img_shape[1], x + radius + 1)
 
-    # Apply the mathematical blur to create the probability distribution
-    density_map = gaussian_filter(density_map, sigma=sigma, mode='constant')
+            kernel_y_start = image_y_start - (y - radius)
+            kernel_y_end = kernel_y_start + (image_y_end - image_y_start)
+            kernel_x_start = image_x_start - (x - radius)
+            kernel_x_end = kernel_x_start + (image_x_end - image_x_start)
+
+            visible_kernel = gaussian_kernel[
+                kernel_y_start:kernel_y_end,
+                kernel_x_start:kernel_x_end,
+            ]
+            visible_kernel = visible_kernel / visible_kernel.sum()
+
+            # Add rather than assign so annotations at the same pixel accumulate.
+            density_map[
+                image_y_start:image_y_end,
+                image_x_start:image_x_end,
+            ] += visible_kernel
+
     return density_map
 
 def process_mall_dataset(mat_path, output_dir, img_shape=(480, 640)):
