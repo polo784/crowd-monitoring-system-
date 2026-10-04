@@ -1,0 +1,17 @@
+{
+  "checkpoint": "outputs/checkpoints/csrnet_drive_best.pt",
+  "checkpoint_sha256": "622956dd59ba559f877abb6f76e3fc8ca73a6a7ccd6c4ac9f477be48a7a7ba43",
+  "device": "auto",
+  "attention_thresholds": {"watch": 40, "elevated": 70, "review": 100},
+  "max_sample_hz": 4,
+  "max_model_pixels": 921600,
+  "max_video_bytes": 2147483648,
+  "max_frame_bytes": 8388608,
+  "history_limit": 1200,
+  "overlay_max_age_seconds": 2,
+  "observation_max_age_seconds": 5,
+  "health_timeout_seconds": 5,
+  "inference_timeout_seconds": 30,
+  "control_timeout_seconds": 5,
+  "upload_timeout_seconds": 660
+}

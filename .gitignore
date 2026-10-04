@@ -16,6 +16,14 @@ cv_project/mall_dataset/
 cv_project/mall_dataset_zipped.zip
 mall_dataset/
 
+# Downloaded external crowd-evaluation footage and annotation archives
+videos/ht21/
+videos/
+*.log
+.env
+.env.*
+!.env.example
+
 # Trained model weights and experiment outputs
 checkpoints/
 outputs/
@@ -27,3 +35,7 @@ runs/
 .uv-cache/
 .pytest_cache/
 .ipynb_checkpoints/
+
+# Windows/macOS generated folder metadata
+Thumbs.db
+.DS_Store

@@ -1,0 +1,15 @@
+{
+  "model": "CSRNet",
+  "architecture": "VGG16 convolutional frontend with three pools; dilation-2 backend; linear 1x1 density output",
+  "artifact": "outputs/checkpoints/csrnet_drive_best.pt",
+  "epoch": 16,
+  "sha256": "622956dd59ba559f877abb6f76e3fc8ca73a6a7ccd6c4ac9f477be48a7a7ba43",
+  "training_dataset": "Mall, 2000 sequential frames; train 1-1400, validation 1401-1700, test 1701-2000",
+  "normalization": "RGB float32 in [0,1], ImageNet mean/std; density remains raw",
+  "validation_mae": 1.511237649235592,
+  "validation_rmse": 1.9403135414995965,
+  "verified_current_checkpoint_mall_test": null,
+  "acquisition": "Owner's preserved Colab/Drive artifact or verified local backup; not downloaded automatically",
+  "distribution_permissions": "Not established by this repository. Verify model, dataset and media rights before redistribution.",
+  "intended_use": "Local prerecorded-video research demonstration; not validated for safety decisions"
+}
