@@ -1,0 +1,32 @@
+name: Source tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: uv.lock
+      - name: Install CPU test dependencies from locked direct versions
+        run: python tools/install_ci_dependencies.py
+      - name: Python tests without downloaded datasets or weights
+        run: python tools/run_source_tests.py
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Frontend regressions
+        run: node dashboard/test_dashboard_js.cjs
+      - name: JavaScript syntax
+        run: node --check dashboard/dashboard.js

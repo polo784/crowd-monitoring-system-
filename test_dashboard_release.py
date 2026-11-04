@@ -14,7 +14,7 @@ import httpx
 import uvicorn
 
 from dashboard import create_app
-from dashboard_service import DashboardRuntime, load_config
+from dashboard_service import API_VERSION, DashboardRuntime, load_config
 import launch_dashboard
 from test_dashboard import FakePredictor
 
@@ -22,7 +22,7 @@ from test_dashboard import FakePredictor
 class ReleaseTests(unittest.TestCase):
     def test_launcher_reuses_ready_service_without_new_process(self):
         config = load_config()
-        status = {"model_state": "ready", "model": {"checkpoint_sha256": config["checkpoint_sha256"]}}
+        status = {"api_version":API_VERSION,"model_state": "ready", "model": {"checkpoint_sha256": config["checkpoint_sha256"]}}
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0)); listener.listen()
             port = listener.getsockname()[1]

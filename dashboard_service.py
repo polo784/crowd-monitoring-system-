@@ -20,10 +20,12 @@ import cv2
 import numpy as np
 
 from crowd_inference import CSRNetPredictor
+from crowd_zones import validate_zones, zone_counts
 from video_inference import file_sha256, normalize_density_display
 
 LOG = logging.getLogger("crowd.dashboard")
 ROOT = Path(__file__).resolve().parent
+API_VERSION = "0.2.0"
 
 
 class RuntimeProblem(Exception):
@@ -144,6 +146,7 @@ class VideoSession:
     completions: deque = field(default_factory=lambda: deque(maxlen=20))
     segment_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     observations_total: int = 0
+    zones: list = field(default_factory=list)
 
 
 class DashboardRuntime:
@@ -191,11 +194,13 @@ class DashboardRuntime:
                                   "playing": s.playing, "timestamp": s.timestamp,
                                   "video": s.metadata, "segment_id": s.segment_id,
                                   "observations_total": s.observations_total,
+                                  "zones": copy.deepcopy(s.zones),
                                   "latest": s.latest, "history": list(s.history)}
 
     def status(self):
         with self.lock:
-            return {"model_state": self.model_state, "error": self.error,
+            return {"api_version": API_VERSION, "features": {"rectangular_zones": True},
+                    "model_state": self.model_state, "error": self.error,
                     "model": self.predictor.metadata if self.predictor else None,
                     "config": {k: v for k, v in self.config.items() if k not in {"checkpoint", "checkpoint_sha256"}},
                     "session": None if not self.session else {"id": self.session.id,
@@ -223,23 +228,30 @@ class DashboardRuntime:
             raise RuntimeProblem(409, "Stale frame discarded after a playback change")
         return s
 
-    def control(self, session_id, generation, action, timestamp, playing):
+    def control(self, session_id, generation, action, timestamp, playing, zones=None):
         with self.lock:
             s = self.require_session(session_id)
             if generation <= s.generation:
                 raise RuntimeProblem(409, "Old playback command discarded")
-            if action not in {"play", "pause", "seek", "restart", "ended", "invalidate"}:
+            if action not in {"play", "pause", "seek", "restart", "ended", "invalidate", "zones"}:
                 raise RuntimeProblem(422, "Unknown playback command")
             self.check_timestamp(s, timestamp)
+            if action == "zones":
+                try:
+                    checked_zones = validate_zones(zones)
+                except ValueError as error:
+                    raise RuntimeProblem(422, str(error)) from error
+                s.zones = checked_zones
             s.generation, s.playing, s.timestamp = generation, playing, timestamp
             s.completions.clear()
             s.latest = s.latest_density = s.latest_frame = None
-            if action in {"seek", "restart"}:
+            if action in {"seek", "restart", "zones"}:
                 s.history.clear()
                 s.segment_id = uuid.uuid4().hex
                 s.observations_total = 0
             result = {"generation": s.generation, "playing": s.playing,
-                      "segment_id": s.segment_id, "history_length": len(s.history)}
+                      "segment_id": s.segment_id, "zones": copy.deepcopy(s.zones),
+                      "history_length": len(s.history)}
         LOG.info("Playback %s at %.3fs | generation=%s", action, timestamp, generation)
         return result
 
@@ -264,6 +276,7 @@ class DashboardRuntime:
                 if s.latest and timestamp <= s.latest["timestamp"]:
                     raise RuntimeProblem(409, "Repeated or out-of-order sample discarded")
                 metadata = s.metadata.copy()
+                zones = copy.deepcopy(s.zones)
             if len(image_bytes) > self.config["max_frame_bytes"]:
                 raise RuntimeProblem(413, "Sampled image is too large")
             # Read JPEG header before allocating the decoded image. This is a local
@@ -288,6 +301,7 @@ class DashboardRuntime:
             if not math.isfinite(prediction.count) or not np.isfinite(prediction.density).all():
                 raise RuntimeProblem(503, "Model produced non-finite values; inference stopped")
             png = heatmap_png(prediction.density)
+            regional_counts = zone_counts(prediction.density, zones)
             completed = time.perf_counter()
             with self.lock:
                 s = self.require_session(session_id, generation)  # Reject work invalidated while CUDA ran.
@@ -305,6 +319,7 @@ class DashboardRuntime:
                           "model_fps": 1000 / max(prediction.inference_ms, 1e-9),
                           "sample_fps": rate, "service_ms": (completed - started) * 1000,
                           "input_shape": prediction.input_shape, "output_shape": prediction.output_shape,
+                          "zone_counts": regional_counts,
                           "heatmap": png}
                 s.latest, s.latest_density, s.latest_frame = result, prediction.density, frame
                 s.timestamp = timestamp
@@ -323,9 +338,11 @@ class DashboardRuntime:
                     "video": copy.deepcopy(s.metadata) if s else None,
                     "session_id": s.id if s else None, "segment_id": s.segment_id if s else None,
                     "history_capacity": self.config["history_limit"],
+                    "zones": copy.deepcopy(s.zones) if s else [],
+                    "zone_policy": "Normalized playback-frame rectangles; signed raw-density integrals with fractional cell coverage. Overlapping zones are not additive; no people/m² or safety interpretation.",
                     "count_definition": "float64 sum of raw signed density; no clipping or calibration",
                     "sampling": "browser decoded playback frame encoded as JPEG quality 0.92",
-                    "reset_rule": "seek/restart/video change resets segment; pause retains history",
+                    "reset_rule": "seek/restart/video change/zone-layout edits reset segment; pause retains history",
                     "timing_definition": "Browser capture-to-result uses performance.now and includes JPEG, upload, service, download; service excludes HTTP transfer",
                     "limitations": ["Prototype attention thresholds; not validated safety limits.",
                                      "Heatmap shows predicted image-space density, not people/m²."]}

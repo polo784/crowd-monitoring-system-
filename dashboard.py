@@ -74,9 +74,10 @@ def prepare_playback(path, scratch, metadata, config):
 class Control(BaseModel):
     session_id: str
     generation: int = Field(ge=1)
-    action: Literal["play", "pause", "seek", "restart", "ended", "invalidate"]
+    action: Literal["play", "pause", "seek", "restart", "ended", "invalidate", "zones"]
     timestamp: float = Field(ge=0, allow_inf_nan=False)
     playing: bool
+    zones: list[dict] | None = Field(default=None, max_length=6)
 
 
 def create_app(config=None, runtime=None):

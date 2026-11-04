@@ -10,6 +10,8 @@ let graphStart = 0, sampleMediaTime = null;
 let backendReady=false, healthFlight=false, retainedFile=null, recoveryNeeded=false;
 let exportMetadata=null, observationsTotal=0, stateName='loading', completions=[];
 let resetPending=false;
+let zones=[], zoneEditing=false, zoneBusy=false, zoneStart=null, zoneDraft=null;
+const zoneCanvas=$('zones'), zoneCtx=zoneCanvas.getContext('2d');
 const buttons = ['play','pause','back','forward','restart','seek'];
 
 function clock(t, decimal=false) {
@@ -23,6 +25,11 @@ function enableControls() {
   buttons.forEach(id=>$(id).disabled=!session||selecting||(id==='play'&&!backendReady));
   $('pause').disabled=!session;
   $('choose').disabled=selecting||!backendReady;
+  $('zone-draw').disabled=!session||selecting||!backendReady||zoneBusy||zones.length>=6;
+  $('zone-clear').disabled=!session||!backendReady||zoneBusy||!zones.length;
+  $('zone-finish').disabled=!zoneEditing||!zoneDraft||zoneBusy;
+  $('zone-cancel').disabled=!zoneEditing||zoneBusy;
+  $('play').disabled ||= zoneEditing||zoneBusy;
   $('export-csv').disabled=$('export-json').disabled=!history.length;
 }
 function setState(name,message) {
@@ -38,9 +45,11 @@ function clearObservation(resetHistory=false,label='AWAITING DATA') {
   $('attention').textContent = label; $('attention').className = 'attention-badge';
   $('attention-reason').textContent='No current assessment; previous measurements are history only.';
   $('sample-time').textContent = 'No fresh model observation'; drawChart();enableControls();
+  renderZones();
 }
 function invalidatePending(){readyGeneration=-1;++generation;sampleMediaTime=null;snapshotWanted=false;if(flight)flight.controller.abort();}
 function fail(message,unavailable=false){
+  cancelZoneDrawing();
   if(selecting){++fileVersion;selecting=false;uploadController?.abort();}
   backendReady=false;invalidatePending();clearObservation(false,unavailable?'UNAVAILABLE':'ERROR');
   video.pause();setState(unavailable?'unavailable':'error',message);notice(message);enableControls();
@@ -60,7 +69,7 @@ async function jsonRequest(url, options={}, timeoutSeconds=5) {
     throw error;
   }finally{clearTimeout(timer);parent?.removeEventListener('abort',abort);}
 }
-async function syncControl(action, reset=false) {
+async function syncControl(action, reset=false, proposedZones=null) {
   if (!session) return;
   const id = session.id, epoch = ++generation;
   readyGeneration = -1;
@@ -70,8 +79,13 @@ async function syncControl(action, reset=false) {
   if(!backendReady||recoveryNeeded)return;
   try {
     const response = await jsonRequest('/api/control', {method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:id,generation:epoch,action,timestamp:video.currentTime,playing:!video.paused&&!video.ended})},config.control_timeout_seconds);
-    if (session?.id === id && epoch === generation) { readyGeneration = response.generation;session.segment_id=response.segment_id;nextSampleAt = 0;if(reset)resetPending=false; }
+      body:JSON.stringify({session_id:id,generation:epoch,action,timestamp:video.currentTime,playing:!video.paused&&!video.ended,
+                           ...(action==='zones'?{zones:proposedZones}:{})})},config.control_timeout_seconds);
+    if (session?.id === id && epoch === generation) {
+      readyGeneration = response.generation;session.segment_id=response.segment_id;nextSampleAt=0;if(reset)resetPending=false;
+      if(response.zones){zones=response.zones;if(exportMetadata)exportMetadata.zones=zones;renderZones();}
+      return true;
+    }
   } catch (error) {
     if (session?.id === id && epoch === generation)fail(error.message,true);
   }
@@ -81,6 +95,7 @@ async function selectFile(file) {
   if (selecting) { notice('Please wait for the current video to finish opening.'); return; }
   if (file.size > (config?.max_video_bytes || 2147483648)) { notice('This video exceeds the configured 2 GiB upload limit.'); return; }
   const version = ++fileVersion;
+  cancelZoneDrawing();zones=[];zoneBusy=false;
   retainedFile=file;
   selecting = true; video.pause();
   if (flight) flight.controller.abort();
@@ -98,6 +113,7 @@ async function selectFile(file) {
     if (version !== fileVersion) return;
     session = selected; generation = selected.generation; readyGeneration = generation;
     recoveryNeeded=false;resetPending=false;exportMetadata=selected.export_metadata;
+    zones=selected.zones||[];renderZones();
     $('video-stage').style.aspectRatio = `${selected.video.width}/${selected.video.height}`;
     $('source-info').textContent = `RECORDED · ${selected.video.width} × ${selected.video.height} · ${selected.video.fps.toFixed(1)} FPS`;
     $('video-fps').textContent = (selected.video.original?.fps||selected.video.fps).toFixed(1);
@@ -139,6 +155,7 @@ function receiveResult(result, epoch,capturedAt=performance.now()) {
   completions.push(receivedAt);if(completions.length>20)completions.shift();
   observation.completed_samples_per_second=completions.length>1?(completions.length-1)*1000/(receivedAt-completions[0]):null;
   latest=result;latest.receivedAt=receivedAt;
+  renderZones();
   $('count').textContent = result.count.toFixed(1);
   $('latency').textContent = result.inference_ms.toFixed(0);
   $('sample-fps').textContent = observation.completed_samples_per_second == null ? '—' : observation.completed_samples_per_second.toFixed(1);
@@ -158,7 +175,7 @@ function receiveResult(result, epoch,capturedAt=performance.now()) {
   updatePlayback(); drawChart();
 }
 async function sampleFrame() {
-  if (!backendReady || !session || selecting || flight || readyGeneration !== generation || video.seeking || video.readyState < 2) return;
+  if (!backendReady || !session || selecting || zoneEditing || zoneBusy || flight || readyGeneration !== generation || video.seeking || video.readyState < 2) return;
   const snapshot = snapshotWanted;
   if ((video.paused || video.ended || document.hidden) && !snapshot) return;
   if (performance.now() < nextSampleAt && !snapshot) return;
@@ -236,14 +253,58 @@ function exportData(format){
   const metadata={...exportMetadata,segment_id:session?.segment_id,exported_at_utc:new Date().toISOString(),history_capacity:config.history_limit,
     observations_total:observationsTotal,discarded_observations:Math.max(0,observationsTotal-history.length),
     retained_range_seconds:[observations[0].timestamp,observations.at(-1).timestamp],
+    zones:zones.map(z=>({...z,rect:[...z.rect]})),
     history_status:'retained historical observations, not necessarily current',backend_connected:backendReady};
   let content,type;
   if(format==='json'){content=JSON.stringify({metadata,observations},null,2);type='application/json';}
-  else{const keys=Object.keys(observations[0]);const cell=value=>{const text=value==null?'':typeof value==='object'?JSON.stringify(value):String(value);return '"'+text.replaceAll('"','""')+'"';};
-    content=[keys.map(cell).join(','),...observations.map(p=>keys.map(k=>cell(p[k])).join(','))].join('\r\n');type='text/csv';}
+  else{const rows=observations.map(p=>({...p,...Object.fromEntries(zones.map(z=>[`zone_${z.id}_count`,p.zone_counts?.[z.id]??null]))}));
+    const keys=Object.keys(rows[0]);const cell=value=>{const text=value==null?'':typeof value==='object'?JSON.stringify(value):String(value);return '"'+text.replaceAll('"','""')+'"';};
+    content=[keys.map(cell).join(','),...rows.map(p=>keys.map(k=>cell(p[k])).join(','))].join('\r\n');type='text/csv';}
   const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;
   a.download=`crowd-${session?.segment_id||'history'}.${format}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function renderZones(){
+  const box=zoneCanvas.getBoundingClientRect(),ratio=window.devicePixelRatio||1;
+  zoneCanvas.width=Math.max(1,Math.round(box.width*ratio));zoneCanvas.height=Math.max(1,Math.round(box.height*ratio));
+  const w=zoneCanvas.width,h=zoneCanvas.height;
+  zoneCtx.clearRect(0,0,w,h);zoneCtx.font=`${12*ratio}px Segoe UI`;zoneCtx.lineWidth=2*ratio;
+  function rectangle(rect,name){const [l,t,r,b]=rect;zoneCtx.strokeStyle='#a8c4ec';zoneCtx.fillStyle='#a8c4ec18';
+    zoneCtx.fillRect(l*w,t*h,(r-l)*w,(b-t)*h);zoneCtx.strokeRect(l*w,t*h,(r-l)*w,(b-t)*h);
+    if(name){zoneCtx.fillStyle='#080d13dd';zoneCtx.fillRect(l*w,t*h,Math.min((r-l)*w,240*ratio),22*ratio);
+      zoneCtx.fillStyle='#eef2f7';zoneCtx.fillText(name,l*w+5*ratio,t*h+15*ratio,Math.max(1,(r-l)*w-10*ratio));}}
+  for(const z of zones)rectangle(z.rect,z.name);
+  if(zoneDraft)rectangle(zoneDraft,'New zone');
+  const list=$('zone-list');list.replaceChildren();
+  for(const z of zones){const row=document.createElement('div');row.className='zone-row';
+    const name=document.createElement('span'),count=document.createElement('strong');name.textContent=z.name;
+    const value=latest?.zone_counts?.[z.id];count.textContent=Number.isFinite(value)?value.toFixed(1):'—';
+    row.append(name,count);list.append(row);}
+  $('zone-empty').hidden=zones.length>0;
+}
+function cancelZoneDrawing(){zoneEditing=false;zoneStart=null;zoneDraft=null;zoneCanvas.classList.remove('editing');renderZones();enableControls();}
+$('zone-draw').onclick=()=>{
+  video.pause();invalidatePending();clearObservation();zoneEditing=true;zoneDraft=null;
+  zoneCanvas.classList.add('editing');notice('Drag a rectangle on the video, enter its name, then Save zone. Saving resets this segment and history.');enableControls();
+};
+function zonePoint(event){const b=zoneCanvas.getBoundingClientRect();return [Math.max(0,Math.min(1,(event.clientX-b.left)/b.width)),Math.max(0,Math.min(1,(event.clientY-b.top)/b.height))];}
+zoneCanvas.addEventListener('pointerdown',event=>{if(!zoneEditing)return;zoneStart=zonePoint(event);zoneDraft=null;zoneCanvas.setPointerCapture(event.pointerId);});
+zoneCanvas.addEventListener('pointermove',event=>{if(!zoneStart)return;const p=zonePoint(event);zoneDraft=[Math.min(p[0],zoneStart[0]),Math.min(p[1],zoneStart[1]),Math.max(p[0],zoneStart[0]),Math.max(p[1],zoneStart[1])];renderZones();enableControls();});
+zoneCanvas.addEventListener('pointerup',()=>{zoneStart=null;if(zoneDraft&&(zoneDraft[2]-zoneDraft[0])*(zoneDraft[3]-zoneDraft[1])<1e-6)zoneDraft=null;renderZones();enableControls();});
+zoneCanvas.addEventListener('pointercancel',()=>{zoneStart=null;zoneDraft=null;renderZones();enableControls();});
+$('zone-cancel').onclick=async()=>{cancelZoneDrawing();if(backendReady&&session){await syncControl('invalidate');snapshotWanted=true;}notice('Zone drawing cancelled.');};
+async function applyZones(proposed){
+  zoneBusy=true;enableControls();const id=session?.id;
+  try{const saved=await syncControl('zones',true,proposed);
+    if(saved&&session?.id===id){cancelZoneDrawing();snapshotWanted=true;notice('Zone layout saved. New segment started; counts are model estimates, not physical density.');}
+  }finally{zoneBusy=false;enableControls();}
+}
+$('zone-finish').onclick=async()=>{if(!zoneDraft||zoneBusy)return;const name=$('zone-name').value.trim();
+  if(!name||name.length>40){notice('Enter a zone name with 1–40 characters.');return;}
+  const identity='z'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  await applyZones([...zones,{id:identity,name,rect:zoneDraft}]);
+};
+$('zone-clear').onclick=async()=>{video.pause();cancelZoneDrawing();await applyZones([]);};
+new ResizeObserver(renderZones).observe($('video-stage'));
 $('export-csv').onclick=()=>exportData('csv');$('export-json').onclick=()=>exportData('json');
 $('choose').onclick=()=>$('file').click();$('file').onchange=e=>{selectFile(e.target.files[0]);e.target.value='';};
 const stage=$('video-stage');['dragenter','dragover'].forEach(name=>stage.addEventListener(name,e=>{e.preventDefault();stage.classList.add('dragging');}));

@@ -7,12 +7,13 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 async function fixture(){
   let now=1000,download=null,fetchImpl=async()=>({ok:true,json:async()=>({model_state:'ready',config,session:null,model:{checkpoint_epoch:16,device_name:'test'}})});
-  const elements=new Map();
+  const elements=new Map();let nodeCounter=0;
   const draw=new Proxy({},{get:()=>()=>{}});
   function element(id){
     if(!elements.has(id))elements.set(id,{id,textContent:'',disabled:false,hidden:false,style:{},dataset:{},classList:{add(){},remove(){}},
       parentElement:{},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},
-      getContext:()=>draw,getBoundingClientRect:()=>({width:800,height:200}),
+      getContext:()=>draw,getBoundingClientRect:()=>({width:800,height:200,left:0,top:0}),
+      children:[],replaceChildren(){this.children=[];},append(...children){this.children.push(...children);},setPointerCapture(){},
       querySelector:()=>({textContent:''}),contains:()=>false,click(){},load(){},removeAttribute(){},
       width:960,height:540,videoWidth:960,videoHeight:540,currentTime:1,duration:20,readyState:2,
       seeking:false,paused:false,ended:false,pause(){this.paused=true;},play(){this.paused=false;return Promise.resolve();},
@@ -20,7 +21,7 @@ async function fixture(){
     return elements.get(id);
   }
   const sandbox={console,performance:{now:()=>now},document:{getElementById:element,hidden:false,
-    createElement:type=>type==='a'?{click(){}}:element('capture')},window:{devicePixelRatio:1},
+    createElement:type=>type==='a'?{click(){}}:type==='canvas'?element('capture'):element(`created-${type}-${++nodeCounter}`)},window:{devicePixelRatio:1},
     Image:class{set src(value){queueMicrotask(()=>this.onload?.());}},ResizeObserver:class{observe(){}},
     AbortController,FormData,Blob,Date,setTimeout,clearTimeout,setInterval:()=>0,queueMicrotask,
     URL:{createObjectURL:blob=>{download=blob;return 'blob:test';},revokeObjectURL(){}},fetch:(...args)=>fetchImpl(...args)};
@@ -99,6 +100,26 @@ const response=stamp=>({session_id:'s',generation:1,segment_id:'seg',timestamp:s
     const f=await fixture();f.element('capture').toBlob=fn=>fn(null);
     await f.run('sampleFrame()');assert.equal(f.run('flight'),null);assert.equal(f.run('backendReady'),false);
     assert.equal(f.element('video').paused,true);assert.equal(f.element('count').textContent,'—');
+  });
+  await test('zone estimates expire with current data while outlines and labelled history remain',async()=>{
+    const f=await fixture();f.run("zones=[{id:'gate',name:'Gate <not HTML>',rect:[0,0,.5,1]}]");
+    f.scope.result={...response(1),zone_counts:{gate:12.345}};f.run('receiveResult(result,1,800)');
+    assert.equal(f.element('zone-list').children[0].children[0].textContent,'Gate <not HTML>');
+    assert.equal(f.element('zone-list').children[0].children[1].textContent,'12.3');
+    f.setNow(7000);f.run('updatePlayback()');
+    assert.equal(f.element('zone-list').children[0].children[1].textContent,'—');
+    assert.equal(f.run('zones.length'),1);assert.equal(f.run('history.length'),1);
+  });
+  await test('zone editing resets history, rejects old layout results and exports rectangular provenance',async()=>{
+    const f=await fixture();f.scope.result=response(1);f.run('receiveResult(result,1)');
+    f.setFetch(async()=>({ok:true,json:async()=>({generation:2,segment_id:'zones2',zones:[{id:'gate',name:'Gate',rect:[0,0,.5,1]}]})}));
+    await f.run("applyZones([{id:'gate',name:'Gate',rect:[0,0,.5,1]}])");
+    assert.equal(f.run('history.length'),0);f.run('receiveResult(result,1)');assert.equal(f.run('history.length'),0);
+    f.scope.result={...response(1),generation:2,segment_id:'zones2',zone_counts:{gate:-2.123456789}};
+    f.run('receiveResult(result,2,800);exportData("json")');
+    const data=JSON.parse(await f.getDownload().text());assert.equal(data.metadata.zones[0].id,'gate');
+    assert.equal(data.observations[0].zone_counts.gate,-2.123456789);
+    f.run('exportData("csv")');const csv=await f.getDownload().text();assert.ok(csv.includes('zone_gate_count'));assert.ok(csv.includes('-2.123456789'));
   });
   console.log(`${passed} frontend regression tests passed (mock DOM; no browser claim)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

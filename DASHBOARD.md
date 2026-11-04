@@ -1,5 +1,16 @@
 # Local V1 dashboard behavior
 
+**Current update:** named rectangular region counts and exports are now supported.
+See [ZONES.md](ZONES.md) for controls, count integration and limitations, and
+[BENCHMARKING.md](BENCHMARKING.md) for annotated-image evaluation before retraining.
+The epoch-16 Mall model remains unchanged. Backend API 0.2.0 prevents accidental
+reuse of an older dashboard process; stop/relaunch after updating source.
+
+The prior release's browser-verification gap below is historical. The November
+update has additionally exercised real browser upload/playback, region drawing,
+restart, freshness expiry and JSON download; see the dated improvement report.
+This does not imply all earlier failure/soak scenarios have been rerun.
+
 Launch `start_dashboard.cmd` (absolute path also works outside the project).
 It checks existing Python 3.11 dependencies, configuration, checkpoint SHA-256
 and FFmpeg. Waits up to 120 seconds for model readiness before opening

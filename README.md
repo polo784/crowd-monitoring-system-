@@ -5,6 +5,22 @@ monitoring dashboard. **Research demonstration, not a crowd-safety system.**
 FastAPI/Uvicorn, PyTorch/OpenCV, native HTML video, plain JavaScript and Canvas.
 No training, recalibration, frontend CDN or database is needed to launch.
 
+## New region counts and evaluation tools
+
+Draw up to six named rectangles on a paused video to inspect estimated crowd at
+an entrance or stair area. Counts integrate raw signed density, not a colored
+heatmap. Saving a layout starts a new history segment; seek/restart retain it,
+new video selection clears it. JSON/CSV exports include regional counts and
+definitions. These are not physical density or localized safety assessments.
+See [ZONES.md](ZONES.md).
+
+Measure models on more crowded/varied annotated images before adopting new weights.
+The new reusable count benchmark reports MAE, RMSE and signed bias overall, by
+crowd-size band and by supplied condition. An original-layout ShanghaiTech
+point-annotation reader is included. See [BENCHMARKING.md](BENCHMARKING.md) for
+commands, source links and the recommended next training experiment. This update
+does **not** claim a newly trained model or improved accuracy on a new dataset.
+
 ## Launch on this Windows laptop
 
 From any PowerShell directory:
@@ -84,8 +100,9 @@ Expected SHA-256:
 Launcher and backend verify the hash; backend checks epoch 16 too.
 [model_manifest.json](model_manifest.json) records identity/provenance. Do not
 substitute weights or run a training notebook to launch. Mall data is unnecessary
-for the dashboard; the full historical test suite imports the Mall loader and
-requires its 2,000 JPG/HDF5 pairs. Focused dashboard tests need no Mall data.
+for the dashboard. The source test suite uses synthetic fixtures and needs no
+downloaded dataset or weights. Training helpers defer loading the real Mall split
+until training is explicitly requested.
 
 ## Results — separate scopes
 
@@ -104,6 +121,7 @@ reliability. A constant count correction is not a scientific fix.
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -v
+.\.venv\Scripts\python.exe tools/run_source_tests.py
 node dashboard/test_dashboard_js.cjs
 ```
 

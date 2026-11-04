@@ -23,7 +23,8 @@ from torch.utils.data import DataLoader
 
 from csrnet import CSRNet
 from density_utils import density_counts, resize_density_preserving_count
-from mall_dataloader import test_loader, train_loader, validation_loader
+# Only actual training loads the Mall files; importing helpers/CI needs no data.
+train_loader = validation_loader = test_loader = None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -307,7 +308,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    global train_loader, validation_loader, test_loader
     args = parse_args()
+    if train_loader is None:
+        from mall_dataloader import train_loader, validation_loader, test_loader
     checkpoint_path = args.output_dir / "checkpoints" / "csrnet_best.pt"
     latest_checkpoint_path = args.output_dir / "checkpoints" / "csrnet_latest.pt"
     report_path = args.output_dir / "csrnet_results.json"

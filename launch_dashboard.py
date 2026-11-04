@@ -64,11 +64,13 @@ def main():
         if occupied:
             try:
                 state = read_status(url)
-                matches = state.get("model", {}).get("checkpoint_sha256") == config["checkpoint_sha256"]
+                from dashboard_service import API_VERSION
+                matches = (state.get("model", {}).get("checkpoint_sha256") == config["checkpoint_sha256"]
+                           and state.get("api_version") == API_VERSION)
             except (URLError, ValueError, AttributeError, TimeoutError):
                 matches = False
             if not matches or state.get("model_state") != "ready":
-                raise RuntimeError(f"Port {args.port} is occupied by another/not-ready service; stop it or use --port 8001")
+                raise RuntimeError(f"Port {args.port} is occupied by another/not-ready or older dashboard; stop it and relaunch, or use --port 8001")
             print(f"Existing ready dashboard reused: {url}. No duplicate process started.", flush=True)
             if not args.no_browser:
                 webbrowser.open(url)
