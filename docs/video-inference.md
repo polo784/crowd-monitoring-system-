@@ -113,7 +113,7 @@ for readability, dimensions, and reported frame count.
 ## Verify the infrastructure
 
 ```powershell
-uv --cache-dir .uv-cache run --frozen python -m unittest test_video_inference -v
+uv --cache-dir .uv-cache run --frozen python -m unittest tests.test_video_inference -v
 ```
 
 Tests cover BGR/RGB conversion, normalization, signed raw counts, visualization

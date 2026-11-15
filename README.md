@@ -1,165 +1,59 @@
-# CCTV Crowd Awareness — Local V1
+# CCTV Crowd Awareness
 
-One prerecorded video + the preserved Mall CSRNet epoch-16 model + a local
-monitoring dashboard. **Research demonstration, not a crowd-safety system.**
-FastAPI/Uvicorn, PyTorch/OpenCV, native HTML video, plain JavaScript and Canvas.
-No training, recalibration, frontend CDN or database is needed to launch.
+A local dashboard for prerecorded video. CSRNet estimates crowd counts and
+produces a heatmap. The dashboard supports named counting zones, playback
+controls, and timestamped CSV and JSON exports. Offline video inference and
+annotated-image benchmarks use the same predictor.
 
-## New region counts and evaluation tools
+## Run the dashboard
 
-Draw up to six named rectangles on a paused video to inspect estimated crowd at
-an entrance or stair area. Counts integrate raw signed density, not a colored
-heatmap. Saving a layout starts a new history segment; seek/restart retain it,
-new video selection clears it. JSON/CSV exports include regional counts and
-definitions. These are not physical density or localized safety assessments.
-See [ZONES.md](ZONES.md).
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run
+   `uv sync --frozen` from the repository root. The project uses Python 3.11.
+2. Obtain the preserved Mall CSRNet epoch-16 checkpoint from a trusted backup.
+   Put it at `outputs/checkpoints/csrnet_drive_best.pt`. The launcher verifies
+   its SHA-256 against the [model manifest](model_manifest.json). The checkout
+   contains source and documentation. The checkpoint, datasets, and footage
+   are supplied separately.
+3. In PowerShell, run `.\start_dashboard.cmd`. When the model is ready, the
+   launcher opens [the dashboard](http://127.0.0.1:8000/). Keep the terminal open
+   while using the app. Ctrl+C stops the server.
+4. Choose or drop a local video, wait for preparation, then press Play. Pause and
+   select **Draw zone** to measure a part of the frame. Export measurements from
+   the graph panel before resetting the session.
 
-Measure models on more crowded/varied annotated images before adopting new weights.
-The new reusable count benchmark reports MAE, RMSE and signed bias overall, by
-crowd-size band and by supplied condition. An original-layout ShanghaiTech
-point-annotation reader is included. See [BENCHMARKING.md](BENCHMARKING.md) for
-commands, source links and the recommended next training experiment. This update
-does **not** claim a newly trained model or improved accuracy on a new dataset.
+The app uses CUDA when available and falls back to CPU. Use
+`start_dashboard.cmd --check` for a startup check, `--port 8001` if the usual
+port is occupied, or `--no-browser` to start only the backend.
 
-## Launch on this Windows laptop
+## Project guides
 
-From any PowerShell directory:
+- [Dashboard controls, counting zones, exports, and troubleshooting](docs/dashboard.md)
+- [Offline video inference](docs/video-inference.md)
+- [Annotated-image benchmarking and ShanghaiTech manifests](docs/benchmarking.md)
+- [Mall training and result review in Colab](docs/colab.md)
+- [Verification report](reports/v1_release_20261005.md)
 
-```powershell
-& 'C:\Users\YCIN\cv_learning\start_dashboard.cmd'
-```
+## Model results
 
-The launcher uses this project's Python 3.11 `.venv`, checks dependencies,
-configuration, checkpoint SHA-256 and FFmpeg, starts **one** loopback backend,
-waits for model readiness, then opens **http://127.0.0.1:8000/**. It reuses an
-already-ready matching service rather than starting a duplicate. Logs stay in the
-terminal. **Ctrl+C stops the backend; closing it stops the site.** No automatic
-package/model downloads or training.
+| Evaluation | MAE (people) | RMSE (people) |
+| --- | ---: | ---: |
+| Epoch-16 Mall validation, from checkpoint metadata | 1.511238 | 1.940314 |
+| [Historical epoch-10 Mall test](reports/csrnet_10_epoch_review.md) | 1.901865 | 2.363966 |
+| [Epoch-16 HT21 diagnostic](reports/ht21_01_evaluation.md) | 6.583950 | 7.241862 |
 
-Options: `start_dashboard.cmd --port 8001`, `--check` (preflight only), or
-`--no-browser`. A conflicting/not-ready service produces a clear port error.
+The HT21 diagnostic covers 429 correlated frames from one compressed preview.
+The recorded signed bias was −6.583950 people. The prototype is for local use.
+Attention thresholds are demonstrations. Target-camera validation is required
+before interpreting counts as operational evidence.
 
-## Use, export and failure recovery
+## Run tests
 
-Choose a permitted local video or drop it on the video panel, wait for preparation,
-then Play. Native video playback is independent of at most **4 model samples/s**.
-Controls: Pause, ±5 seconds, Restart, timeline seek, density toggle and opacity.
-Restart stays paused; paused seek takes one snapshot.
-
-Counts use the **float64 sum of raw signed density**. No clipping or correction
-multiplier. Heatmap scaling is display-only. RGB float32 [0,1] + ImageNet
-normalization is unchanged. Whole-frame stride-eight resizing retains the scene;
-the explicit configurable default budget is **921,600 pixels**. Changing image
-scale can change predictions/accuracy. OOM stops with guidance, never hidden retry.
-
-Current measurements expire after **5 seconds wall-clock age** or **2 seconds
-video misalignment**. Disconnect/error pauses playback and clears count, attention
-and overlay. Local Pause and historical export still work. Recovery never
-autoplays: press Play after readiness returns. After a backend restart, first
-Play reopens the retained File as a new segment; a second Play starts playback.
-Export prior history first. Page reload loses browser history/file selection.
-
-Graph-panel CSV/JSON exports retain full-precision counts, inference timestamps,
-UTC capture/observation labels, generation/segment, attention/reason, shapes and
-timings. JSON adds checkpoint hash/epoch/device/preprocessing, thresholds,
-sampling policy, original **and** playback metadata, conversion settings, retained
-range and discarded count. Exports work even while Python is disconnected.
-Pair CSV with JSON for provenance. No ground truth/confidence/accuracy is invented.
-
-Seek/restart/video replacement resets the segment/history. At most **1,200**
-observations remain; earlier points are dropped and that loss is reported. Graph
-shows the latest 60 seconds. Prior measurements are clearly labelled history.
-
-Metrics distinguish nominal source FPS, synchronized model forward time, rolling
-completed samples/s, service time, browser capture-to-result latency and sample
-age. Browser latency uses `performance.now()`, includes JPEG + transfer + service,
-and is **not live-camera latency**. Browser/server UTC clocks are labels only.
-
-## Trusted model / fresh checkout
-
-Use Python **3.11**, uv, a compatible NVIDIA driver for CUDA and sufficient
-temporary disk. Restore dependencies with `uv sync --frozen` (includes the dev HTTP
-test client). CPU is chosen if CUDA is unavailable, but can be very slow. Node is
-optional for frontend regression tests, not runtime. Launcher never installs.
-
-Datasets, checkpoints, footage and generated outputs are **not in Git**. Obtain
-the owner's preserved epoch-16 artifact from their trusted Colab/Drive or verified
-local backup. No public artifact download URL is provided. Place it at
-`outputs/checkpoints/csrnet_drive_best.pt` and verify:
+From the repository root with the environment installed:
 
 ```powershell
-Get-FileHash outputs/checkpoints/csrnet_drive_best.pt -Algorithm SHA256
+uv run --frozen python tools/run_source_tests.py
+node tests/test_dashboard_js.cjs
 ```
 
-Expected SHA-256:
-
-```text
-622956dd59ba559f877abb6f76e3fc8ca73a6a7ccd6c4ac9f477be48a7a7ba43
-```
-
-Launcher and backend verify the hash; backend checks epoch 16 too.
-[model_manifest.json](model_manifest.json) records identity/provenance. Do not
-substitute weights or run a training notebook to launch. Mall data is unnecessary
-for the dashboard. The source test suite uses synthetic fixtures and needs no
-downloaded dataset or weights. Training helpers defer loading the real Mall split
-until training is explicitly requested.
-
-## Results — separate scopes
-
-| Artifact/evaluation | MAE (people) | RMSE (people) | Provenance |
-| --- | ---: | ---: | --- |
-| Current epoch-16 Mall **validation** | 1.511238 | 1.940314 | Preserved checkpoint metadata |
-| Historical epoch-10 Mall **test** | 1.901865 | 2.363966 | reports/csrnet_10_epoch_results.json |
-| Epoch-16 HT21 diagnostic | 6.583950 | 7.241862 | 429 correlated frames, one compressed preview; reports/ht21_01_evaluation.md |
-
-HT21 signed bias: **−6.583950**, every evaluated frame undercounted. **No verified
-epoch-16 Mall test result** is present locally. Incomplete AI draft annotations
-do not establish accuracy. Mall plus one short clip do not establish festival
-reliability. A constant count correction is not a scientific fix.
-
-## Verification / troubleshooting
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -v
-.\.venv\Scripts\python.exe tools/run_source_tests.py
-node dashboard/test_dashboard_js.cjs
-```
-
-[Release verification](reports/v1_release_20261005.md) distinguishes automated,
-real GPU/service and browser checks, including unverified checks.
-[DASHBOARD.md](DASHBOARD.md) explains configuration/synchronization and remaining
-manual acceptance. [VIDEO_INFERENCE.md](VIDEO_INFERENCE.md) covers offline inference;
-[COLAB_README.md](COLAB_README.md) covers historical training, not launch.
-
-- Missing/hash-mismatched model: restore the trusted artifact; don't edit the hash
-  just to accept a different file.
-- CUDA OOM: explicitly reduce `max_model_pixels` in configuration, then restart.
-- Codec error: try H.264 MP4. Other decodable codecs use a lossy CRF18 H.264 copy,
-  remove audio and pad odd dimensions by at most one pixel. Originals stay
-  unchanged. JPEG quality 0.92 samples are not pixel-identical to offline input.
-- Backend gone: restart launcher, wait for readiness, export retained history,
-  then Play to reopen/resume. Read the visible log for errors.
-
-## Limits and provenance
-
-“Prototype attention thresholds; not validated safety limits.”
-“Heatmap shows predicted image-space density, not people/m².”
-
-Demonstration NORMAL/WATCH/ELEVATED/REVIEW thresholds are 40/70/100, configurable.
-Negative raw counts remain in measurements but attention is unavailable.
-No localized bottleneck, physical density, crowd danger or personnel advice.
-
-**Local only**, one shared in-memory video/model/session; use one tab. No auth,
-session isolation or hardened media sandbox. Upload limit is 2 GiB **after**
-multipart parsing. Do not expose to LAN/internet or tunnel publicly. Forced kill
-can leave owned temporary files. Only process permitted footage. No media/model
-distribution rights, safety certification or repository license is invented.
-Owner must review dataset/media provenance and permissions before redistribution.
-Learning/data code remains preserved; the results notebook with embedded images
-stays local, outside this source-only dashboard release.
-
-Next stage: human-reviewed **target-camera** empty/night/dense scenes; measure
-count error and bias before choosing scene-specific thresholds. Network hosting
-also needs authentication, session isolation, upload limits before parsing,
-duration/conversion quotas and bounded compute. Hosting choice needs audience,
-hardware and budget details; it is not part of V1.
+The source tests use synthetic fixtures and run without the Mall dataset or model
+weights. Node is required only for the frontend tests.

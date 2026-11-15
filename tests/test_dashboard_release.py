@@ -16,7 +16,7 @@ import uvicorn
 from dashboard import create_app
 from dashboard_service import API_VERSION, DashboardRuntime, load_config
 import launch_dashboard
-from test_dashboard import FakePredictor
+from tests.test_dashboard import FakePredictor
 
 
 class ReleaseTests(unittest.TestCase):

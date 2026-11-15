@@ -12,12 +12,10 @@ wheels/
 # Local datasets and generated density maps
 # Keep these files on the computer, but do not store their large binary
 # contents in Git. The README will document how to obtain/regenerate them.
-cv_project/mall_dataset/
 cv_project/mall_dataset_zipped.zip
 mall_dataset/
 
 # Downloaded external crowd-evaluation footage and annotation archives
-videos/ht21/
 videos/
 *.log
 .env

@@ -1,21 +1,13 @@
 # Local V1 dashboard behavior
 
-**Current update:** named rectangular region counts and exports are now supported.
-See [ZONES.md](ZONES.md) for controls, count integration and limitations, and
-[BENCHMARKING.md](BENCHMARKING.md) for annotated-image evaluation before retraining.
-The epoch-16 Mall model remains unchanged. Backend API 0.2.0 prevents accidental
-reuse of an older dashboard process; stop/relaunch after updating source.
+See the [README](../README.md#run-the-dashboard) for setup and launch commands.
+The launcher waits up to 120 seconds for model readiness. It runs one worker
+without reload. Ctrl+C requests a clean shutdown. A forced exit may leave
+temporary files.
 
-The prior release's browser-verification gap below is historical. The November
-update has additionally exercised real browser upload/playback, region drawing,
-restart, freshness expiry and JSON download; see the dated improvement report.
-This does not imply all earlier failure/soak scenarios have been rerun.
-
-Launch `start_dashboard.cmd` (absolute path also works outside the project).
-It checks existing Python 3.11 dependencies, configuration, checkpoint SHA-256
-and FFmpeg. Waits up to 120 seconds for model readiness before opening
-http://127.0.0.1:8000/. One worker, no reload. Ctrl+C requests cleanup/shutdown;
-forced kill can leave temporary files. Browser refresh doesn't start a server.
+Choose or drop a permitted local video, wait for preparation, then press Play.
+Use Pause, ±5 seconds, Restart, the timeline, and the heatmap toggle and opacity
+controls. Restart leaves the video paused.
 
 ## Implementation and synchronization
 
@@ -52,6 +44,36 @@ and discards work invalidated before completion. Health/control don't acquire th
 GPU mutex. Recovery requires readiness, never autoplays. After restart loses the
 session, first Play reopens the retained File as a new segment; second Play starts.
 Export previous history before reopening. Reload loses browser history/File.
+
+## Counting zones
+
+1. Choose a video, play briefly, then pause.
+2. Select **Draw zone** and drag a rectangle over the image.
+3. Enter a name (up to 40 characters), then select **Save zone**. A paused
+   snapshot shows the first regional estimate. Press Play for updates.
+4. Use **Clear zones** to remove the layout. Seek and restart keep the layout.
+   Selecting a different video clears it. Export JSON to retain definitions.
+
+The dashboard supports up to six rectangles. Saving or clearing the layout starts
+a new history segment, so export the previous segment first. In-flight results
+from the old layout are discarded. Expired measurements clear regional estimates
+and leave the outlines visible.
+
+Each rectangle uses normalized playback-frame edge coordinates `[left, top,
+right, bottom]` in `[0,1]`. Its estimate sums each raw signed density cell times
+the fraction of the cell it covers. A full-frame rectangle equals the full raw
+count. Adjacent disjoint rectangles covering the frame sum to that count within
+floating-point tolerance. Overlapping rectangles both include the shared mass.
+The coarse grid and density smoothing make regional counts approximate. The
+prototype attention indicator uses the full-frame count.
+
+`POST /api/control` accepts `action: "zones"` with a `zones` array of objects
+such as `{"id":"gate","name":"Gate","rect":[0,0,0.5,1]}`. The request also
+includes the session, generation, timestamp and playing fields. Invalid layouts
+leave the current generation and history intact. Inference and history rows
+include `zone_counts` by ID. JSON retains definitions and the integration policy,
+and browser CSV adds `zone_<id>_count` columns. If the launcher detects an older
+backend API, stop that process and relaunch or select a different port.
 
 ## Central configuration
 
@@ -114,11 +136,20 @@ copies are removed on replacement or clean shutdown.
 One shared session, local origin/host checks, no authentication, upload quota
 before parsing, duration quota or untrusted-media sandbox. Do not expose publicly.
 
-## Release verification and manual acceptance still required
+## Troubleshooting
 
-See `reports/v1_release_20261005.md`. Fake-DOM tests are **not** browser tests.
-Browser automation lost its session and native automation was blocked during
-this release. Old screenshots don't establish that changed V1 passes acceptance.
+- If the page refuses the connection, run `start_dashboard.cmd` and keep its
+  terminal open. If the port is occupied, use `--port 8001` and open that port.
+- If checkpoint verification fails, restore the trusted artifact recorded in
+  [the model manifest](../model_manifest.json). The launcher performs no downloads.
+- For CUDA memory errors, lower `max_model_pixels` in `dashboard_config.json`
+  and restart. Image scale can affect the predicted count.
+- If codec preparation fails, try an H.264 MP4 and check the terminal log.
+
+## Manual acceptance checklist
+
+See the [verification report](../reports/v1_release_20261005.md) for the real
+browser checks, backend soak, and outstanding scenarios.
 
 1. Launch; select a permitted real video and Play. Verify moving people, updating
    count/heatmap/history. Exercise Pause/seek/restart/±5s and density controls.
@@ -129,5 +160,5 @@ this release. Old screenshots don't establish that changed V1 passes acceptance.
    must never restore future/obsolete results. Check timeout/error messages.
 4. Download CSV/JSON. Verify one count, exact hash, original vs playback properties,
    shapes, segment/generation and discarded count against the graph/history.
-5. Do a 15-minute **browser playback** soak with resource/responsiveness checks.
-   A completed real-backend soak does not replace this blocked browser test.
+5. Run a 15-minute browser playback soak and measure resource use and
+   responsiveness.

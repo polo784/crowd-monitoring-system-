@@ -77,7 +77,7 @@ From `C:\Users\YCIN\cv_learning` (choose new output directories for another run)
 ```powershell
 .\.venv\Scripts\python.exe -u video_inference.py --video videos/ht21/HT21-01-raw.mp4 --checkpoint outputs/checkpoints/csrnet_drive_best.pt --output-dir outputs/video_inference/ht21_01_gpu_20261002 --device cuda --input-size 544 960
 .\.venv\Scripts\python.exe -u evaluate_ht21.py --labels videos/ht21/HT21Labels.zip --sequence HT21-01 --run-dir outputs/video_inference/ht21_01_gpu_20261002 --output-dir outputs/video_inference/ht21_01_gpu_20261002/evaluation
-.\.venv\Scripts\python.exe -m unittest test_ht21_evaluation test_video_inference test_video_annotations -v
+.\.venv\Scripts\python.exe -m unittest tests.test_ht21_evaluation tests.test_video_inference tests.test_video_annotations -v
 ```
 
 Created `download_ht21_sample.py`, `evaluate_ht21.py` and

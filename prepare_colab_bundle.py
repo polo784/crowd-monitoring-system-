@@ -14,14 +14,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SOURCE_FILES = (
-    "csrnet.py", "density_utils.py", "train_csrnet.py",
-    "mall_torch_dataset.py", "mall_dataloader.py", "test_csrnet.py",
+    Path("csrnet.py"), Path("density_utils.py"), Path("train_csrnet.py"),
+    Path("mall_torch_dataset.py"), Path("mall_dataloader.py"),
+    Path("tests/test_csrnet.py"),
 )
 FRAMES_DIR = Path("cv_project/mall_dataset/frames/frames")
 DENSITY_DIR = Path("cv_project/mall_dataset/density_maps")
 
 
-def bundle_files() -> list[Path]:
+def bundle_files() -> dict[str, Path]:
     frames = [FRAMES_DIR / f"seq_{number:06d}.jpg" for number in range(1, 2001)]
     densities = [DENSITY_DIR / f"frame_{number:04d}.h5" for number in range(1, 2001)]
     if {path.name for path in (PROJECT_ROOT / FRAMES_DIR).glob("*.jpg")} != {
@@ -32,11 +33,13 @@ def bundle_files() -> list[Path]:
         path.name for path in densities
     }:
         raise RuntimeError("Expected exactly Mall density maps 1-2000")
-    paths = [Path(name) for name in SOURCE_FILES] + frames + densities
-    for relative in paths:
+    # Colab runs the copied test as a standalone module at the bundle root.
+    members = {path.name: path for path in SOURCE_FILES}
+    members.update({path.as_posix(): path for path in frames + densities})
+    for relative in members.values():
         if not (PROJECT_ROOT / relative).is_file():
             raise FileNotFoundError(PROJECT_ROOT / relative)
-    return paths
+    return members
 
 
 def sha256_file(path: Path) -> str:
@@ -52,7 +55,7 @@ def refresh_notebook_sources() -> None:
     notebook_path = PROJECT_ROOT / "CSRNet_Mall_Colab.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     cell = next(cell for cell in notebook["cells"] if cell.get("id") == "source-snapshot")
-    sources = {name: (PROJECT_ROOT / name).read_text(encoding="utf-8") for name in SOURCE_FILES}
+    sources = {path.name: (PROJECT_ROOT / path).read_text(encoding="utf-8") for path in SOURCE_FILES}
     # JSON object/string syntax is valid Python for this string-only dictionary.
     cell["source"] = ("# Current source snapshot; refresh after editing the Python scripts.\n"
                       + "NOTEBOOK_SOURCES = " + json.dumps(sources, indent=2)
@@ -64,24 +67,24 @@ def refresh_notebook_sources() -> None:
 
 
 def build_bundle(output: Path) -> None:
-    paths = bundle_files()
+    members = bundle_files()
     output.parent.mkdir(parents=True, exist_ok=True)
     records = {}
     # Exclusive creation protects an earlier upload bundle from accidental overwrite.
     with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED,
                          compresslevel=1, allowZip64=True) as archive:
-        for index, relative in enumerate(paths, 1):
+        for index, (name, relative) in enumerate(members.items(), 1):
             digest = hashlib.sha256()
             size = 0
             with (PROJECT_ROOT / relative).open("rb") as source:
-                with archive.open(relative.as_posix(), "w", force_zip64=True) as destination:
+                with archive.open(name, "w", force_zip64=True) as destination:
                     for chunk in iter(lambda: source.read(1024 * 1024), b""):
                         digest.update(chunk)
                         destination.write(chunk)
                         size += len(chunk)
-            records[relative.as_posix()] = {"bytes": size, "sha256": digest.hexdigest()}
-            if index % 500 == 0 or index == len(paths):
-                print(f"Packed {index}/{len(paths)} files", flush=True)
+            records[name] = {"bytes": size, "sha256": digest.hexdigest()}
+            if index % 500 == 0 or index == len(members):
+                print(f"Packed {index}/{len(members)} files", flush=True)
 
         manifest = {
             "format_version": 1,
@@ -90,7 +93,7 @@ def build_bundle(output: Path) -> None:
             "density_map_count": 2000,
             "batch_size": 4,
             "splits": {"train": [1, 1400], "validation": [1401, 1700], "test": [1701, 2000]},
-            "source_files": list(SOURCE_FILES),
+            "source_files": [path.name for path in SOURCE_FILES],
             "files": records,
         }
         archive.writestr("bundle_manifest.json", json.dumps(manifest, indent=2))

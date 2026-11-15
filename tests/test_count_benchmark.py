@@ -11,7 +11,7 @@ from scipy.io import savemat
 
 from count_benchmark import count_band,count_metrics,evaluate_manifest,load_manifest
 from prepare_shanghaitech_manifest import create_manifest
-from test_dashboard import FakePredictor
+from tests.test_dashboard import FakePredictor
 
 
 class BenchmarkTests(unittest.TestCase):

@@ -27,6 +27,6 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - name: Frontend regressions
-        run: node dashboard/test_dashboard_js.cjs
+        run: node tests/test_dashboard_js.cjs
       - name: JavaScript syntax
         run: node --check dashboard/dashboard.js

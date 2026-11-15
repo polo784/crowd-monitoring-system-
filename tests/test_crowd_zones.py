@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from crowd_zones import validate_zones, zone_counts
 from dashboard import create_app
 from dashboard_service import RuntimeProblem
-import test_dashboard as fixtures
+from tests import test_dashboard as fixtures
 
 
 def zone(identity,rect): return {"id":identity,"name":identity,"rect":rect}

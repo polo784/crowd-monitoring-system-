@@ -10,6 +10,8 @@ sys.path.insert(0,str(ROOT))
 sys.modules["mall_dataloader"]=None
 
 if __name__=="__main__":
-    suite=unittest.defaultTestLoader.discover(str(ROOT),pattern="test_*.py")
+    suite = unittest.defaultTestLoader.discover(
+        str(ROOT / "tests"), pattern="test_*.py", top_level_dir=str(ROOT)
+    )
     result=unittest.TextTestRunner(verbosity=2).run(suite)
     raise SystemExit(not result.wasSuccessful())

@@ -1,6 +1,6 @@
-# CSRNet + Mall: completed training and result review
+# CSRNet and Mall training in Colab
 
-## Current next step: review the completed run
+## Review the completed run
 
 The 10-epoch continuation completed successfully. Best epoch: 10; validation
 MAE: 1.622362; test MAE: 1.901865. These were checked against the Drive result
@@ -14,7 +14,8 @@ dataset ZIP, model loading, GPU, or training is needed for this review. Locally,
 its first cell can read `reports/csrnet_10_epoch_results.json` from a working
 Python kernel; images require the PNG files described in its second cell.
 
-See `reports/csrnet_10_epoch_review.md` for the reviewed results and artifact links.
+See the [10-epoch run report](../reports/csrnet_10_epoch_review.md) for the
+reviewed results and artifact details.
 The instructions below describe the original training/continuation workflow;
 they are not necessary just to view completed results.
 
